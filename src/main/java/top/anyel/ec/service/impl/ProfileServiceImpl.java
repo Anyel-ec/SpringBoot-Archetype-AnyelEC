@@ -1,0 +1,121 @@
+package top.anyel.ec.service.impl;
+
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import top.anyel.ec.dto.JsonResponseDto;
+import top.anyel.ec.dto.ProfileDto;
+import top.anyel.ec.dto.ProfilePasswordDto;
+import top.anyel.ec.models.UserInfo;
+import top.anyel.ec.repository.UserInfoRepository;
+import top.anyel.ec.security.jwt.JwtProvider;
+import top.anyel.ec.security.jwt.JwtRevokedToken;
+import top.anyel.ec.service.interfaces.ProfileService;
+/*
+ * Author: Anyel EC
+ * Github: https://github.com/Anyel-ec
+ * Creation date: 10/01/2025
+ */
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class ProfileServiceImpl implements ProfileService {
+
+    private final UserInfoRepository userInfoRepository;
+    private final PasswordEncoder encoder;
+    private final JwtProvider jwtProvider;
+    private final JwtRevokedToken jwtRevokedToken;
+
+    @Override
+    public JsonResponseDto getProfile(String token) {
+        try {
+            // Extract the username from the token
+            String username = jwtProvider.getNombreUsuarioFromToken(token);
+
+            // Fetch the user from the database
+            UserInfo user = userInfoRepository.findByUsernameAndIsActiveTrue(username);
+
+            if (user == null) {
+                return new JsonResponseDto(false, HttpStatus.NOT_FOUND.value(), "Usuario no encontrado.", null);
+            }
+            log.info("El usuario obtenido es: {}", user);
+            return new JsonResponseDto(true, HttpStatus.OK.value(), "Detalles del usuario obtenidos con éxito", user);
+        } catch (Exception e) {
+            log.error("Error en la obtención perfil del usuario: {}", e.getMessage());
+            return new JsonResponseDto(false, HttpStatus.INTERNAL_SERVER_ERROR.value(), "Error al procesar la solicitud", null);
+        }
+    }
+
+
+    @Override
+    public JsonResponseDto updateProfile(String token, ProfileDto updateUserRequestDto) {
+        try {
+            // extarct the username from the token
+            String username = jwtProvider.getNombreUsuarioFromToken(token);
+
+            // search name
+            UserInfo user = userInfoRepository.findByUsernameAndIsActiveTrue(username);
+
+            if (user == null) {
+                return new JsonResponseDto(false, HttpStatus.NOT_FOUND.value(), "Usuario no encontrado.", null);
+            }
+
+            // update
+            user.setUsername(updateUserRequestDto.getUsername());
+            user.setPhone(updateUserRequestDto.getPhone());
+            user.setEmail(updateUserRequestDto.getEmail());
+            user.setName(updateUserRequestDto.getName());
+            user.setCompany(updateUserRequestDto.getCompany());
+            user.setLastname(updateUserRequestDto.getLastname());
+            // Guardar los cambios
+            userInfoRepository.save(user);
+
+            return new JsonResponseDto(true, HttpStatus.OK.value(), "Usuario actualizado con éxito", user);
+        } catch (Exception e) {
+            log.error("Error al actualizar perfil del usuario: {}", e.getMessage());
+            return new JsonResponseDto(false, HttpStatus.INTERNAL_SERVER_ERROR.value(), "Error al procesar la solicitud", null);
+        }
+    }
+
+
+    @Override
+    public JsonResponseDto updatePassword(String token, ProfilePasswordDto profilePasswordDto) {
+        try {
+            // Extraer el username del token
+            String username = jwtProvider.getNombreUsuarioFromToken(token);
+
+            // Buscar al usuario por username
+            UserInfo user = userInfoRepository.findByUsernameAndIsActiveTrue(username);
+            if (user == null) {
+                return new JsonResponseDto(false, HttpStatus.NOT_FOUND.value(), "Usuario no encontrado.", null);
+            }
+
+            // Validar que la contraseña actual proporcionada coincida con la almacenada
+            if (!encoder.matches(profilePasswordDto.getCurrentPassword(), user.getPassword())) {
+                return new JsonResponseDto(false, HttpStatus.UNAUTHORIZED.value(), "La contraseña actual es incorrecta.", null);
+            }
+
+            // Validar que la nueva contraseña cumpla las reglas de seguridad
+            if (profilePasswordDto.getNewPassword().length() < 8) {
+                return new JsonResponseDto(false, HttpStatus.BAD_REQUEST.value(), "La nueva contraseña debe tener al menos 8 caracteres.", null);
+            }
+
+            // Actualizar la contraseña en el modelo
+            user.setPassword(encoder.encode(profilePasswordDto.getNewPassword()));
+
+            // Guardar los cambios en la base de datos
+            userInfoRepository.save(user);
+
+            return new JsonResponseDto(true, HttpStatus.OK.value(), "Contraseña actualizada con éxito.", null);
+
+        } catch (Exception e) {
+            return new JsonResponseDto(false, HttpStatus.INTERNAL_SERVER_ERROR.value(), "Error al actualizar la contraseña.", null);
+        }
+    }
+
+
+}
